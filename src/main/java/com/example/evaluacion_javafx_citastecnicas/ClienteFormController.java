@@ -10,6 +10,8 @@ import java.util.Locale;
 import java.util.function.Consumer;
 
 public class ClienteFormController {
+    private final ClienteDAO dao = new ClienteDAO();
+
     @FXML private VBox formulario;
     @FXML private TextField nombres, apellidos, telefono, correo;
     @FXML private CheckBox activo;
@@ -39,7 +41,7 @@ public class ClienteFormController {
     Cliente leer() {
         Cliente cliente = new Cliente(id, nombres.getText().trim(), apellidos.getText().trim(),
                 telefono.getText().trim(), correo.getText().trim().toLowerCase(Locale.ROOT), activo.isSelected());
-        new ClienteDAO().validarCliente(cliente);
+        dao.validarCliente(cliente);
         nombres.setText(cliente.getNombres());
         apellidos.setText(cliente.getApellidos());
         correo.setText(cliente.getCorreo());

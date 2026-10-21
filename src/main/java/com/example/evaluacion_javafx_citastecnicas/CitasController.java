@@ -4,6 +4,7 @@ import com.example.evaluacion_javafx_citastecnicas.dao.CitaTecnicaDAO;
 import com.example.evaluacion_javafx_citastecnicas.dao.ClienteDAO;
 import com.example.evaluacion_javafx_citastecnicas.model.CitaTecnica;
 import com.example.evaluacion_javafx_citastecnicas.model.Cliente;
+import javafx.animation.PauseTransition;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
@@ -23,6 +24,7 @@ public class CitasController extends MenuController {
     @FXML private TableColumn<CitaTecnica, String> clienteCol, fechaCol, horaCol, servicioCol, estadoCol;
     @FXML private Label resumen;
     private boolean primeraCarga = true;
+    private PauseTransition debounceFiltro;
     private record Datos(List<Cliente> clientes, List<CitaTecnica> citas) { }
 
     @FXML private void initialize() {
@@ -39,11 +41,23 @@ public class CitasController extends MenuController {
         Ui.flujo(filtroEstado, filtroFecha, filtrar);
         Ui.configurarTabla(tabla, verDetalles, editar, this::detalles, this::editar, this::eliminar);
         citaFormController.configurar(null, this::guardar);
+
+        debounceFiltro = Ui.debounce(250, this::ejecutarFiltro);
+        filtroEstado.valueProperty().addListener((obs, o, n) -> Ui.reiniciar(debounceFiltro));
+        filtroFecha.valueProperty().addListener((obs, o, n) -> Ui.reiniciar(debounceFiltro));
+        filtroFecha.setOnAction(e -> { debounceFiltro.stop(); ejecutarFiltro(); });
     }
 
-    @Override public void cargar() { filtrar(); citaFormController.enfocar(); }
+    @Override public void cargar() {
+        ejecutarFiltro();
+        citaFormController.enfocar();
+    }
 
     @FXML private void filtrar() {
+        Ui.reiniciar(debounceFiltro);
+    }
+
+    private void ejecutarFiltro() {
         final LocalDate fecha;
         try { fecha = Ui.leerFecha(filtroFecha); }
         catch (IllegalArgumentException e) { Ui.error(root, e.getMessage()); return; }
@@ -58,7 +72,11 @@ public class CitasController extends MenuController {
     }
 
     @FXML private void limpiarFiltros() {
-        filtroEstado.setValue("Todos"); filtroFecha.setValue(null); filtroFecha.getEditor().clear(); filtrar();
+        debounceFiltro.stop();
+        filtroEstado.setValue("Todos");
+        filtroFecha.setValue(null);
+        filtroFecha.getEditor().clear();
+        ejecutarFiltro();
     }
 
     private void guardar(CitaTecnica cita) {
@@ -76,12 +94,11 @@ public class CitasController extends MenuController {
     private void detalles(CitaTecnica c) {
         Ui.detalles(root, "Detalles de la cita #" + c.getId(),
                 "ID: " + c.getId() + "\nCliente: " + c.getClienteNombreCompleto() + "\nID del cliente: " + c.getClienteId()
-                + "\nFecha: " + c.getFechaFormateada() + "\nHora: " + c.getHoraFormateada()
-                + "\nServicio: " + c.getTipoServicio() + "\nEstado: " + c.getEstado() + "\n\nDescripción:\n" + c.getDescripcion());
+                        + "\nFecha: " + c.getFechaFormateada() + "\nHora: " + c.getHoraFormateada()
+                        + "\nServicio: " + c.getTipoServicio() + "\nEstado: " + c.getEstado() + "\n\nDescripción:\n" + c.getDescripcion());
     }
 
     private void editar(CitaTecnica cita) {
-        // Recarga los clientes antes de editar para evitar opciones desactualizadas.
         Ui.ejecutar(root, clientesDao::listarTodos, clientes -> abrirEditor(cita, clientes));
     }
 
@@ -96,7 +113,7 @@ public class CitasController extends MenuController {
                     if (!guardado) { Ui.error(ventana.root, "La cita ya no existe. Actualice la lista."); return; }
                     Ui.informar(ventana.root, "Cita actualizada correctamente.");
                     ventana.cerrar();
-                    filtrar();
+                    ejecutarFiltro();
                 });
             });
             ventana.mostrar();
@@ -110,7 +127,7 @@ public class CitasController extends MenuController {
         Ui.ejecutar(root, () -> dao.eliminar(cita.getId()), eliminado -> {
             if (eliminado) Ui.informar(root, "Cita eliminada correctamente.");
             else Ui.error(root, "La cita ya no existe. Se actualizará la lista.");
-            filtrar();
+            ejecutarFiltro();
         });
     }
 }

@@ -2,6 +2,7 @@ package com.example.evaluacion_javafx_citastecnicas;
 
 import com.example.evaluacion_javafx_citastecnicas.dao.ClienteDAO;
 import com.example.evaluacion_javafx_citastecnicas.model.Cliente;
+import javafx.animation.PauseTransition;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
@@ -18,6 +19,7 @@ public class ClientesController extends MenuController {
     @FXML private Button verDetalles, editar;
     @FXML private Label resumen;
     private boolean primeraCarga = true;
+    private PauseTransition debounceBusqueda;
 
     @FXML private void initialize() {
         idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
@@ -27,11 +29,22 @@ public class ClientesController extends MenuController {
         activoCol.setCellValueFactory(c -> new ReadOnlyStringWrapper(c.getValue().isActivo() ? "Activo" : "Inactivo"));
         Ui.configurarTabla(tabla, verDetalles, editar, this::detalles, this::editar, this::eliminar);
         clienteFormController.configurar(null, this::guardar);
+
+        debounceBusqueda = Ui.debounce(250, this::ejecutarBusqueda);
+        busqueda.textProperty().addListener((obs, o, n) -> Ui.reiniciar(debounceBusqueda));
+        busqueda.setOnAction(e -> { debounceBusqueda.stop(); ejecutarBusqueda(); });
     }
 
-    @Override public void cargar() { buscar(); clienteFormController.enfocar(); }
+    @Override public void cargar() {
+        ejecutarBusqueda();
+        clienteFormController.enfocar();
+    }
 
     @FXML private void buscar() {
+        Ui.reiniciar(debounceBusqueda);
+    }
+
+    private void ejecutarBusqueda() {
         String criterio = busqueda.getText();
         Ui.ejecutar(root, () -> dao.buscar(criterio), clientes -> {
             tabla.getItems().setAll(clientes);
@@ -40,7 +53,10 @@ public class ClientesController extends MenuController {
         });
     }
 
-    @FXML private void limpiarBusqueda() { busqueda.clear(); buscar(); }
+    @FXML private void limpiarBusqueda() {
+        busqueda.clear();
+        ejecutarBusqueda();
+    }
 
     private void guardar(Cliente cliente) {
         if (!Ui.confirmar(root, "¿Guardar a " + cliente.getNombreCompleto() + " como nuevo cliente?")) return;
@@ -56,8 +72,8 @@ public class ClientesController extends MenuController {
     private void detalles(Cliente c) {
         Ui.detalles(root, "Detalles del cliente #" + c.getId(),
                 "ID: " + c.getId() + "\nNombres: " + c.getNombres() + "\nApellidos: " + c.getApellidos()
-                + "\nNombre completo: " + c.getNombreCompleto() + "\nTeléfono: " + c.getTelefono()
-                + "\nCorreo: " + c.getCorreo() + "\nEstado: " + (c.isActivo() ? "Activo" : "Inactivo"));
+                        + "\nNombre completo: " + c.getNombreCompleto() + "\nTeléfono: " + c.getTelefono()
+                        + "\nCorreo: " + c.getCorreo() + "\nEstado: " + (c.isActivo() ? "Activo" : "Inactivo"));
     }
 
     private void editar(Cliente cliente) {
@@ -70,7 +86,7 @@ public class ClientesController extends MenuController {
                     if (!guardado) { Ui.error(ventana.root, "El cliente ya no existe. Actualice la lista."); return; }
                     Ui.informar(ventana.root, "Cliente actualizado correctamente.");
                     ventana.cerrar();
-                    buscar();
+                    ejecutarBusqueda();
                 });
             });
             ventana.mostrar();
@@ -83,7 +99,7 @@ public class ClientesController extends MenuController {
         Ui.ejecutar(root, () -> dao.eliminar(cliente.getId()), eliminado -> {
             if (eliminado) Ui.informar(root, "Cliente eliminado correctamente.");
             else Ui.error(root, "El cliente ya no existe. Se actualizará la lista.");
-            buscar();
+            ejecutarBusqueda();
         });
     }
 }

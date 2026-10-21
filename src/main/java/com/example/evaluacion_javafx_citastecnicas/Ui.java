@@ -1,5 +1,6 @@
 package com.example.evaluacion_javafx_citastecnicas;
 
+import javafx.animation.PauseTransition;
 import javafx.beans.binding.Bindings;
 import javafx.concurrent.Task;
 import javafx.scene.Node;
@@ -8,6 +9,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.stage.Window;
+import javafx.util.Duration;
 import javafx.util.StringConverter;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -19,16 +21,18 @@ import java.util.function.Consumer;
 /** Utilidades compartidas: teclado, diálogos y JDBC fuera del hilo de JavaFX. */
 public final class Ui {
     private Ui() { }
+
     private static final DateTimeFormatter FECHA = DateTimeFormatter.ofPattern("dd/MM/uuuu")
             .withResolverStyle(ResolverStyle.STRICT);
 
     public static Window ventana(Node node) {
-        return node.getScene() == null ? null : node.getScene().getWindow();
+        return node == null || node.getScene() == null ? null : node.getScene().getWindow();
     }
 
     private static Alert alerta(Node node, Alert.AlertType tipo, String titulo, String mensaje) {
         Alert alert = new Alert(tipo);
-        if (ventana(node) != null) alert.initOwner(ventana(node));
+        Window owner = ventana(node);
+        if (owner != null) alert.initOwner(owner);
         alert.setTitle(titulo);
         alert.setHeaderText(titulo);
         alert.setContentText(mensaje);
@@ -66,34 +70,81 @@ public final class Ui {
         alert.showAndWait();
     }
 
+    // =====================================================================
+    // EJECUCIÓN DE JDBC FUERA DEL HILO DE JAVAFX
+    // =====================================================================
+
+    /** Ejecuta trabajo bloqueante en un hilo daemon y entrega el resultado en el hilo FX. */
     public static <T> void ejecutar(Node root, Callable<T> trabajo, Consumer<T> terminado) {
-        root.setDisable(true);
+        ejecutar(root, trabajo, terminado, "consulta-postgresql");
+    }
+
+    public static <T> void ejecutar(Node root, Callable<T> trabajo,
+                                    Consumer<T> terminado, String nombreHilo) {
+        if (root != null) root.setDisable(true);
+
         Task<T> tarea = new Task<>() {
             @Override protected T call() throws Exception { return trabajo.call(); }
         };
+
         tarea.setOnSucceeded(e -> {
-            root.setDisable(false);
-            terminado.accept(tarea.getValue());
-        });
-        tarea.setOnFailed(e -> {
-            root.setDisable(false);
-            Throwable error = tarea.getException();
-            if (error instanceof IllegalArgumentException) {
-                error(root, error.getMessage());
-            } else if (error instanceof SQLException sql) {
-                String estado = sql.getSQLState();
-                String mensaje = estado != null && estado.startsWith("08")
-                        ? "No hay conexión con PostgreSQL. Revise su conexión de red y database.properties."
-                        : "PostgreSQL no pudo completar la operación. Revise la conexión y las tablas de la base de datos.";
-                error(root, mensaje + (estado == null ? "" : " Código SQL: " + estado));
-            } else {
-                error(root, "Ocurrió un error inesperado al procesar los datos.");
+            if (root != null) root.setDisable(false);
+            try {
+                terminado.accept(tarea.getValue());
+            } catch (RuntimeException ex) {
+                // El callback de UI no debe dejar la pantalla bloqueada ni romper el hilo FX.
+                error(root, "Ocurrió un error al mostrar los resultados.");
             }
         });
-        Thread hilo = new Thread(tarea, "consulta-postgresql");
+
+        tarea.setOnFailed(e -> {
+            if (root != null) root.setDisable(false);
+            manejarFallo(root, tarea.getException());
+        });
+
+        tarea.setOnCancelled(e -> {
+            if (root != null) root.setDisable(false);
+        });
+
+        Thread hilo = new Thread(tarea, nombreHilo);
         hilo.setDaemon(true);
         hilo.start();
     }
+
+    private static void manejarFallo(Node root, Throwable error) {
+        if (error instanceof IllegalArgumentException iae) {
+            Ui.error(root, iae.getMessage());
+        } else if (error instanceof SQLException sql) {
+            String estado = sql.getSQLState();
+            String mensaje = (estado != null && estado.startsWith("08"))
+                    ? "No hay conexión con PostgreSQL. Revise su conexión de red y database.properties."
+                    : "PostgreSQL no pudo completar la operación. Revise la conexión y las tablas de la base de datos.";
+            Ui.error(root, mensaje + (estado == null ? "" : " Código SQL: " + estado));
+        } else {
+            Ui.error(root, "Ocurrió un error inesperado al procesar los datos.");
+        }
+    }
+
+    // =====================================================================
+    // DEBOUNCE REUTILIZABLE
+    // =====================================================================
+
+    /** Devuelve un PauseTransition de 250 ms que ejecuta la acción al terminar. */
+    public static PauseTransition debounce(int milisegundos, Runnable accion) {
+        PauseTransition pausa = new PauseTransition(Duration.millis(milisegundos));
+        pausa.setOnFinished(e -> accion.run());
+        return pausa;
+    }
+
+    /** Dispara (o reinicia) un debounce ya creado. */
+    public static void reiniciar(PauseTransition pausa) {
+        pausa.stop();
+        pausa.playFromStart();
+    }
+
+    // =====================================================================
+    // FECHAS
+    // =====================================================================
 
     public static void configurarFecha(DatePicker picker) {
         picker.setPromptText("dd/mm/aaaa");
@@ -113,6 +164,10 @@ public final class Ui {
         return fecha;
     }
 
+    // =====================================================================
+    // FLUJO DE TECLADO
+    // =====================================================================
+
     /** Enter avanza; Espacio cambia el CheckBox; Shift+Enter conserva saltos en TextArea. */
     public static void flujo(Node... controles) {
         for (int i = 0; i < controles.length - 1; i++) {
@@ -120,14 +175,12 @@ public final class Ui {
             Node siguiente = controles[i + 1];
             actual.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
                 if (event.getCode() != KeyCode.ENTER || event.isShiftDown()) return;
-                // El desplegable debe poder confirmar primero su opción con el comportamiento nativo.
                 if (actual instanceof ComboBoxBase<?> combo && combo.isShowing()) return;
                 event.consume();
             });
             actual.addEventFilter(KeyEvent.KEY_RELEASED, event -> {
                 if (event.getCode() != KeyCode.ENTER || event.isShiftDown()) return;
                 if (actual instanceof ComboBoxBase<?> combo && combo.isShowing()) return;
-                // Avanzar al soltar evita que el siguiente control procese el mismo Enter.
                 event.consume();
                 avanzar(actual, siguiente);
             });
@@ -142,8 +195,12 @@ public final class Ui {
         siguiente.requestFocus();
     }
 
+    // =====================================================================
+    // TABLAS
+    // =====================================================================
+
     public static <T> void configurarTabla(TableView<T> tabla, Button detalles, Button editar,
-                                            Consumer<T> ver, Consumer<T> cambiar, Consumer<T> borrar) {
+                                           Consumer<T> ver, Consumer<T> cambiar, Consumer<T> borrar) {
         detalles.disableProperty().bind(tabla.getSelectionModel().selectedItemProperty().isNull());
         editar.disableProperty().bind(tabla.getSelectionModel().selectedItemProperty().isNull());
         detalles.setOnAction(e -> ver.accept(tabla.getSelectionModel().getSelectedItem()));
