@@ -48,7 +48,7 @@ public class CitasController extends MenuController {
         try { fecha = Ui.leerFecha(filtroFecha); }
         catch (IllegalArgumentException e) { Ui.error(root, e.getMessage()); return; }
         String estado = filtroEstado.getValue();
-        Ui.ejecutar(root, () -> new Datos(clientesDao.listarTodos(), dao.filtrar(estado, fecha)), datos -> {
+        Ui.ejecutar(root, "Consultando citas en PostgreSQL...", () -> new Datos(clientesDao.listarTodos(), dao.filtrar(estado, fecha)), datos -> {
             citaFormController.clientes(datos.clientes());
             tabla.getItems().setAll(datos.citas());
             if (primeraCarga) { primeraCarga = false; citaFormController.enfocar(); }
@@ -64,7 +64,7 @@ public class CitasController extends MenuController {
     private void guardar(CitaTecnica cita) {
         if (!Ui.confirmar(root, "¿Guardar la cita de " + cita.getClienteNombreCompleto()
                 + " para el " + cita.getFechaFormateada() + " a las " + cita.getHoraFormateada() + "?")) return;
-        Ui.ejecutar(root, () -> dao.insertar(cita), guardado -> {
+        Ui.ejecutar(root, "Guardando cita técnica...", () -> dao.insertar(cita), guardado -> {
             if (!guardado) { Ui.error(root, "No se guardó la cita. Intente de nuevo."); return; }
             Ui.informar(root, "Cita guardada correctamente.");
             citaFormController.limpiar();
@@ -76,13 +76,13 @@ public class CitasController extends MenuController {
     private void detalles(CitaTecnica c) {
         Ui.detalles(root, "Detalles de la cita #" + c.getId(),
                 "ID: " + c.getId() + "\nCliente: " + c.getClienteNombreCompleto() + "\nID del cliente: " + c.getClienteId()
-                + "\nFecha: " + c.getFechaFormateada() + "\nHora: " + c.getHoraFormateada()
-                + "\nServicio: " + c.getTipoServicio() + "\nEstado: " + c.getEstado() + "\n\nDescripción:\n" + c.getDescripcion());
+                        + "\nFecha: " + c.getFechaFormateada() + "\nHora: " + c.getHoraFormateada()
+                        + "\nServicio: " + c.getTipoServicio() + "\nEstado: " + c.getEstado() + "\n\nDescripción:\n" + c.getDescripcion());
     }
 
     private void editar(CitaTecnica cita) {
         // Recarga los clientes antes de editar para evitar opciones desactualizadas.
-        Ui.ejecutar(root, clientesDao::listarTodos, clientes -> abrirEditor(cita, clientes));
+        Ui.ejecutar(root, "Cargando clientes...", clientesDao::listarTodos, clientes -> abrirEditor(cita, clientes));
     }
 
     private void abrirEditor(CitaTecnica cita, List<Cliente> clientes) {
@@ -92,7 +92,7 @@ public class CitasController extends MenuController {
             ventana.controller.clientes(clientes);
             ventana.controller.configurar(cita, actualizada -> {
                 if (!Ui.confirmar(ventana.root, "¿Actualizar los datos de esta cita?")) return;
-                Ui.ejecutar(ventana.root, () -> dao.actualizar(actualizada), guardado -> {
+                Ui.ejecutar(ventana.root, "Actualizando cita técnica...", () -> dao.actualizar(actualizada), guardado -> {
                     if (!guardado) { Ui.error(ventana.root, "La cita ya no existe. Actualice la lista."); return; }
                     Ui.informar(ventana.root, "Cita actualizada correctamente.");
                     ventana.cerrar();
@@ -107,7 +107,7 @@ public class CitasController extends MenuController {
     private void eliminar(CitaTecnica cita) {
         if (!Ui.confirmar(root, "¿Eliminar definitivamente la cita #" + cita.getId()
                 + " de " + cita.getClienteNombreCompleto() + "?")) return;
-        Ui.ejecutar(root, () -> dao.eliminar(cita.getId()), eliminado -> {
+        Ui.ejecutar(root, "Eliminando cita técnica...", () -> dao.eliminar(cita.getId()), eliminado -> {
             if (eliminado) Ui.informar(root, "Cita eliminada correctamente.");
             else Ui.error(root, "La cita ya no existe. Se actualizará la lista.");
             filtrar();

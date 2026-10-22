@@ -7,6 +7,7 @@ import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
 import java.sql.SQLException;
@@ -67,32 +68,110 @@ public final class Ui {
     }
 
     public static <T> void ejecutar(Node root, Callable<T> trabajo, Consumer<T> terminado) {
+        ejecutar(root, "Procesando en segundo plano...", trabajo, terminado);
+    }
+
+    public static <T> void ejecutar(Node root, String mensaje, Callable<T> trabajo, Consumer<T> terminado) {
         root.setDisable(true);
+        Stage popup = crearPopupCarga(root, mensaje);
+        if (popup != null) {
+            popup.show();
+        }
+
         Task<T> tarea = new Task<>() {
-            @Override protected T call() throws Exception { return trabajo.call(); }
+            @Override
+            protected T call() throws Exception {
+                long inicio = System.currentTimeMillis();
+                T resultado = trabajo.call();
+                // Breve pausa para asegurar que la animación del hilo sea fluida y visible
+                long duracion = System.currentTimeMillis() - inicio;
+                if (duracion < 450) {
+                    try {
+                        Thread.sleep(450 - duracion);
+                    } catch (InterruptedException ignored) { }
+                }
+                return resultado;
+            }
         };
+
         tarea.setOnSucceeded(e -> {
+            if (popup != null) popup.close();
             root.setDisable(false);
             terminado.accept(tarea.getValue());
         });
+
         tarea.setOnFailed(e -> {
+            if (popup != null) popup.close();
             root.setDisable(false);
             Throwable error = tarea.getException();
             if (error instanceof IllegalArgumentException) {
                 error(root, error.getMessage());
             } else if (error instanceof SQLException sql) {
                 String estado = sql.getSQLState();
-                String mensaje = estado != null && estado.startsWith("08")
+                String msg = estado != null && estado.startsWith("08")
                         ? "No hay conexión con PostgreSQL. Revise su conexión de red y database.properties."
                         : "PostgreSQL no pudo completar la operación. Revise la conexión y las tablas de la base de datos.";
-                error(root, mensaje + (estado == null ? "" : " Código SQL: " + estado));
+                error(root, msg + (estado == null ? "" : " Código SQL: " + estado));
             } else {
                 error(root, "Ocurrió un error inesperado al procesar los datos.");
             }
         });
-        Thread hilo = new Thread(tarea, "consulta-postgresql");
+
+        Thread hilo = new Thread(tarea, "hilo-jdbc-" + (mensaje != null ? mensaje.replace(" ", "-") : "consulta"));
         hilo.setDaemon(true);
         hilo.start();
+    }
+
+    private static Stage crearPopupCarga(Node root, String mensaje) {
+        try {
+            Window ventanaPadre = ventana(root);
+            Stage stage = new Stage();
+            try {
+                stage.initStyle(javafx.stage.StageStyle.TRANSPARENT);
+            } catch (Exception e) {
+                try {
+                    stage.initStyle(javafx.stage.StageStyle.UNDECORATED);
+                } catch (Exception ignored) { }
+            }
+
+            if (ventanaPadre != null) {
+                stage.initOwner(ventanaPadre);
+                stage.initModality(javafx.stage.Modality.WINDOW_MODAL);
+            } else {
+                stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+            }
+
+            ProgressIndicator spinner = new ProgressIndicator();
+            spinner.setPrefSize(40, 40);
+
+            Label lblTitulo = new Label(mensaje != null && !mensaje.isBlank() ? mensaje : "Procesando...");
+            lblTitulo.setStyle("-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
+
+            Label lblSub = new Label("Ejecutando operación JDBC en hilo secundario...");
+            lblSub.setStyle("-fx-font-size: 11px; -fx-text-fill: #64748b; -fx-font-style: italic;");
+
+            javafx.scene.layout.VBox layout = new javafx.scene.layout.VBox(10, spinner, lblTitulo, lblSub);
+            layout.setAlignment(javafx.geometry.Pos.CENTER);
+            layout.setPadding(new javafx.geometry.Insets(18, 28, 18, 28));
+            layout.setStyle("-fx-background-color: #ffffff; -fx-background-radius: 12; " +
+                    "-fx-border-color: #3b82f6; -fx-border-width: 2; -fx-border-radius: 12; " +
+                    "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.22), 14, 0, 0, 4);");
+
+            javafx.scene.Scene scene = new javafx.scene.Scene(layout);
+            scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
+            stage.setScene(scene);
+            stage.setResizable(false);
+
+            if (ventanaPadre != null) {
+                stage.setOnShown(ev -> {
+                    stage.setX(ventanaPadre.getX() + (ventanaPadre.getWidth() - stage.getWidth()) / 2.0);
+                    stage.setY(ventanaPadre.getY() + (ventanaPadre.getHeight() - stage.getHeight()) / 2.0);
+                });
+            }
+            return stage;
+        } catch (Exception e) {
+            return null; // Si no hay entorno grafico en tests headless, continuar sin popup
+        }
     }
 
     public static void configurarFecha(DatePicker picker) {
@@ -143,7 +222,7 @@ public final class Ui {
     }
 
     public static <T> void configurarTabla(TableView<T> tabla, Button detalles, Button editar,
-                                            Consumer<T> ver, Consumer<T> cambiar, Consumer<T> borrar) {
+                                           Consumer<T> ver, Consumer<T> cambiar, Consumer<T> borrar) {
         detalles.disableProperty().bind(tabla.getSelectionModel().selectedItemProperty().isNull());
         editar.disableProperty().bind(tabla.getSelectionModel().selectedItemProperty().isNull());
         detalles.setOnAction(e -> ver.accept(tabla.getSelectionModel().getSelectedItem()));

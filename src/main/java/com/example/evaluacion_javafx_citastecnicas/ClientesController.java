@@ -33,7 +33,7 @@ public class ClientesController extends MenuController {
 
     @FXML private void buscar() {
         String criterio = busqueda.getText();
-        Ui.ejecutar(root, () -> dao.buscar(criterio), clientes -> {
+        Ui.ejecutar(root, "Consultando clientes...", () -> dao.buscar(criterio), clientes -> {
             tabla.getItems().setAll(clientes);
             if (primeraCarga) { primeraCarga = false; clienteFormController.enfocar(); }
             resumen.setText(clientes.size() + " cliente(s) encontrados");
@@ -44,7 +44,7 @@ public class ClientesController extends MenuController {
 
     private void guardar(Cliente cliente) {
         if (!Ui.confirmar(root, "¿Guardar a " + cliente.getNombreCompleto() + " como nuevo cliente?")) return;
-        Ui.ejecutar(root, () -> dao.insertar(cliente), guardado -> {
+        Ui.ejecutar(root, "Guardando cliente...", () -> dao.insertar(cliente), guardado -> {
             if (!guardado) { Ui.error(root, "No se guardó el cliente. Intente de nuevo."); return; }
             Ui.informar(root, "Cliente guardado correctamente.");
             clienteFormController.limpiar();
@@ -56,8 +56,8 @@ public class ClientesController extends MenuController {
     private void detalles(Cliente c) {
         Ui.detalles(root, "Detalles del cliente #" + c.getId(),
                 "ID: " + c.getId() + "\nNombres: " + c.getNombres() + "\nApellidos: " + c.getApellidos()
-                + "\nNombre completo: " + c.getNombreCompleto() + "\nTeléfono: " + c.getTelefono()
-                + "\nCorreo: " + c.getCorreo() + "\nEstado: " + (c.isActivo() ? "Activo" : "Inactivo"));
+                        + "\nNombre completo: " + c.getNombreCompleto() + "\nTeléfono: " + c.getTelefono()
+                        + "\nCorreo: " + c.getCorreo() + "\nEstado: " + (c.isActivo() ? "Activo" : "Inactivo"));
     }
 
     private void editar(Cliente cliente) {
@@ -66,7 +66,7 @@ public class ClientesController extends MenuController {
                     "cliente-form.fxml", "Actualizar cliente");
             ventana.controller.configurar(cliente, actualizado -> {
                 if (!Ui.confirmar(ventana.root, "¿Actualizar los datos de este cliente?")) return;
-                Ui.ejecutar(ventana.root, () -> dao.actualizar(actualizado), guardado -> {
+                Ui.ejecutar(ventana.root, "Actualizando cliente...", () -> dao.actualizar(actualizado), guardado -> {
                     if (!guardado) { Ui.error(ventana.root, "El cliente ya no existe. Actualice la lista."); return; }
                     Ui.informar(ventana.root, "Cliente actualizado correctamente.");
                     ventana.cerrar();
@@ -80,7 +80,7 @@ public class ClientesController extends MenuController {
 
     private void eliminar(Cliente cliente) {
         if (!Ui.confirmar(root, "¿Eliminar definitivamente al cliente " + cliente.getNombreCompleto() + "?")) return;
-        Ui.ejecutar(root, () -> dao.eliminar(cliente.getId()), eliminado -> {
+        Ui.ejecutar(root, "Eliminando cliente...", () -> dao.eliminar(cliente.getId()), eliminado -> {
             if (eliminado) Ui.informar(root, "Cliente eliminado correctamente.");
             else Ui.error(root, "El cliente ya no existe. Se actualizará la lista.");
             buscar();

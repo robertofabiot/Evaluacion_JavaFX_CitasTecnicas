@@ -6,4 +6,6 @@
 # 1. Copia este archivo como 'database.properties' si aun no existe en esta carpeta.
 # 2. Pega tu cadena de conexion de NeonDB en 'db.url' o completa los campos individuales.
 #
-# db.url=jdbc:postgresql://ep-silent-wave-a5xxxxxx.us-east-2.aws.neon.tech/neondb?sslmode=require
+# db.url=jdbc:postgresql://localhost:5432/citas_java
+# db.user="postgres"
+# db.password="2103"
